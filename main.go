@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/jmu0/orm/dbmodel"
 	"log"
-	"orm/dbmodel"
 )
 
 func main() {

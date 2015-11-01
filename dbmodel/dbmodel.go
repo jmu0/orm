@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/jmu0/settings"
 	"log"
 	"os"
-	"settings"
 	"strconv"
 	"strings"
 )
