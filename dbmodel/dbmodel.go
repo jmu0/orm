@@ -113,10 +113,11 @@ func Save(obj DbObject) (int, error) {
 	values += ") "
 	query += fields + " values " + values
 	query += " on duplicate key update " + update
-	fmt.Println(query)
-	res, err := db.Exec(query)
-	fmt.Println(res.LastInsertId())
-	fmt.Println("result:", res)
+	// fmt.Println(query)
+	_, err = db.Exec(query)
+	// res, err := db.Exec(query)
+	// fmt.Println(res.LastInsertId())
+	// fmt.Println("result:", res)
 	if err != nil {
 		return 1, err
 	}
@@ -279,7 +280,7 @@ func needsStrconv(cols []Column) bool {
 //create object from db/table
 func CreateObject(db *sql.DB, dbName, tblName string) error {
 	var code string = ""
-	var importPrefix = "orm/"
+	var importPrefix = "github.com/jmu0/orm/"
 	cols := GetColumns(db, dbName, tblName)
 
 	code += "package " + strings.ToLower(tblName) + "\n\n"
@@ -365,7 +366,9 @@ func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
 	ret += "\tres,err := dbmodel.Query(db, query)\n"
 	ret += "\tif err != nil {\n\t\treturn ret, err\n\t}\n"
 	ret += "\tfor _, r := range res {\n"
-	ret += "\t\tvar err error\n"
+	if needsStrconv(cols) {
+		ret += "\t\tvar err error\n"
+	}
 	ret += "\t\tobj := " + tblName + "{}\n"
 	for _, c := range cols {
 		tp := getType(c.Type)
