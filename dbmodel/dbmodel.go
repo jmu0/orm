@@ -86,6 +86,27 @@ type DbObject interface {
 	GetColumns() []Column
 }
 
+//escape string to prevent common sql injection attacks
+func Escape(str string) string {
+	// ", ', 0=0
+	str = strings.Replace(str, "\"", "\\\"", -1)
+	str = strings.Replace(str, "'", "''", -1)
+	// \x00, \n, \r, \ and \x1a"
+	str = strings.Replace(str, "\x00", "", -1)
+	str = strings.Replace(str, "\n", "", -1)
+	str = strings.Replace(str, "\r", "", -1)
+	str = strings.Replace(str, "\r", "", -1)
+	//multiline attack
+	str = strings.Replace(str, ";", " ", -1)
+	//comments attack
+	str = strings.Replace(str, "--", "", -1)
+	str = strings.Replace(str, "#", "", -1)
+	str = strings.Replace(str, "/*", "", -1)
+	str = strings.Replace(str, "*/", "", -1)
+	return str
+}
+
+//Save database object
 func Save(obj DbObject) (int, error) {
 	dbName, tblName := obj.GetDbInfo()
 	cols := obj.GetColumns()
@@ -105,8 +126,8 @@ func Save(obj DbObject) (int, error) {
 			update += ", "
 		}
 		fields += c.Field
-		values += valueString(c.Value)
-		update += c.Field + "=" + valueString(c.Value)
+		values += Escape(valueString(c.Value))
+		update += c.Field + "=" + Escape(valueString(c.Value))
 
 	}
 	fields += ") "
@@ -389,14 +410,13 @@ func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
 	return ret
 }
 func strPrimaryKeyWhereSql(cols []Column) (string, error) {
-	//TODO primary key where
 	var ret string
 	for _, c := range cols {
 		if c.Key == "PRI" {
 			if len(ret) > 0 {
 				ret += " and"
 			}
-			ret += " " + c.Field + " = " + valueString(c.Value)
+			ret += " " + c.Field + " = " + Escape(valueString(c.Value))
 		}
 	}
 	return ret, nil
