@@ -111,6 +111,7 @@ func Save(obj DbObject) (int, error) {
 	dbName, tblName := obj.GetDbInfo()
 	cols := obj.GetColumns()
 	db, err := Connect()
+	defer db.Close()
 	if err != nil {
 		return 1, err
 	}
@@ -126,8 +127,8 @@ func Save(obj DbObject) (int, error) {
 			update += ", "
 		}
 		fields += c.Field
-		values += Escape(valueString(c.Value))
-		update += c.Field + "=" + Escape(valueString(c.Value))
+		values += valueString(c.Value)
+		update += c.Field + "=" + valueString(c.Value)
 
 	}
 	fields += ") "
@@ -148,6 +149,7 @@ func Delete(obj DbObject) (int, error) {
 	dbName, tblName := obj.GetDbInfo()
 	cols := obj.GetColumns()
 	db, err := Connect()
+	defer db.Close()
 	if err != nil {
 		return 1, err
 	}
@@ -173,16 +175,18 @@ func Delete(obj DbObject) (int, error) {
 //return string for query for value
 func valueString(val interface{}) string {
 	var value string
+	// fmt.Println("valueString:", val)
 	switch t := val.(type) {
 	case string:
 		// values += "\"" + reflect.ValueOf(c.Field) + "\""
-		value += "\"" + val.(string) + "\""
+		value += "\"" + Escape(val.(string)) + "\""
 	case int, int32, int64:
 		value += strconv.Itoa(val.(int))
 	default:
 		fmt.Println(t)
-		value += "\"" + val.(string) + "\""
+		value += "\"" + Escape(val.(string)) + "\""
 	}
+	// fmt.Println("Escaped:", value)
 	return value
 }
 
@@ -383,6 +387,7 @@ func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
 	ret += "\tif len(orderby) > 0 {\n\t\tquery += \" order by \" + orderby\n\t}\n"
 	ret += "\tret := []" + tblName + "{}\n"
 	ret += "\tdb, err := dbmodel.Connect()\n"
+	ret += "\tdefer db.Close()\n"
 	ret += "\tif err != nil {\n\t\treturn ret, err\n\t}\n"
 	ret += "\tres,err := dbmodel.Query(db, query)\n"
 	ret += "\tif err != nil {\n\t\treturn ret, err\n\t}\n"
@@ -416,7 +421,7 @@ func strPrimaryKeyWhereSql(cols []Column) (string, error) {
 			if len(ret) > 0 {
 				ret += " and"
 			}
-			ret += " " + c.Field + " = " + Escape(valueString(c.Value))
+			ret += " " + c.Field + " = " + valueString(c.Value)
 		}
 	}
 	return ret, nil
