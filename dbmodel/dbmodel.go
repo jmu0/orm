@@ -111,7 +111,6 @@ func Save(obj DbObject) (int, error) {
 	dbName, tblName := obj.GetDbInfo()
 	cols := obj.GetColumns()
 	db, err := Connect()
-	defer db.Close()
 	if err != nil {
 		return 1, err
 	}
@@ -149,7 +148,6 @@ func Delete(obj DbObject) (int, error) {
 	dbName, tblName := obj.GetDbInfo()
 	cols := obj.GetColumns()
 	db, err := Connect()
-	defer db.Close()
 	if err != nil {
 		return 1, err
 	}
