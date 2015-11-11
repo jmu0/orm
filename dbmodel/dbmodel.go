@@ -106,6 +106,16 @@ func Escape(str string) string {
 	return str
 }
 
+//database object to map
+func ToMap(obj DbObject) map[string]interface{} {
+	cols := obj.GetColumns()
+	m := make(map[string]interface{})
+	for _, col := range cols {
+		m[col.Field] = col.Value
+	}
+	return m
+}
+
 //Save database object
 func Save(obj DbObject) (int, error) {
 	dbName, tblName := obj.GetDbInfo()
@@ -399,7 +409,8 @@ func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
 		if tp == "int" {
 			ret += "\t\tobj." + strings.ToUpper(c.Field[:1]) + c.Field[1:] + ", err = "
 			ret += "strconv.Atoi(r[\"" + c.Field + "\"])\n"
-			ret += "\t\tif err != nil {\n\t\t\treturn ret, err\n\t\t}\n"
+			ret += "\t\tif err != nil && r[\"" + c.Field + "\"] != \"NULL\""
+			ret += " {\n\t\t\treturn ret, err\n\t\t}\n"
 		} else {
 			ret += "\t\tobj." + strings.ToUpper(c.Field[:1]) + c.Field[1:] + " = "
 			ret += "r[\"" + c.Field + "\"]\n"
