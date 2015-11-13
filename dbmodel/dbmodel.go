@@ -116,6 +116,15 @@ func ToMap(obj DbObject) map[string]interface{} {
 	return m
 }
 
+//database object to map
+func ToMapSlice(slice []DbObject) []map[string]interface{} {
+	ret := make([]map[string]interface{}, 0)
+	for _, obj := range slice {
+		ret = append(ret, ToMap(obj))
+	}
+	return ret
+}
+
 //Save database object
 func Save(obj DbObject) (int, error) {
 	dbName, tblName := obj.GetDbInfo()
