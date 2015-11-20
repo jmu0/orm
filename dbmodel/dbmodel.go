@@ -13,9 +13,13 @@ import (
 )
 
 //connect to database
-func Connect() (*sql.DB, error) {
+func Connect(arg ...string) (*sql.DB, error) {
 	//TODO change path
-	set := settings.Settings{File: "orm.conf"}
+	var path string = "orm.conf"
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		path = "/etc/orm.conf"
+	}
+	set := settings.Settings{File: path}
 	database, err := set.Get("database")
 	if err != nil {
 		fmt.Println(err)
