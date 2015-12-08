@@ -45,7 +45,47 @@ func Connect(arg ...string) (*sql.DB, error) {
 	return db, nil
 }
 
-//Get slice of map[string]string from database
+//Get slice of map[string]interface{} from database
+func Query(db *sql.DB, query string) ([]map[string]interface{}, error) {
+	res := make([]map[string]interface{}, 0)
+	rows, err := db.Query(query)
+	if err != nil {
+		return res, err
+	}
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return res, err
+	}
+	values := make([]sql.RawBytes, len(columns))
+	scanArgs := make([]interface{}, len(values))
+	for i := range values {
+		scanArgs[i] = &values[i]
+	}
+
+	for rows.Next() {
+		rows.Scan(scanArgs...)
+		v := make(map[string]interface{})
+		var value interface{}
+		for i, col := range values {
+			if col == nil {
+				value = ""
+			} else {
+				value = string(col)
+			}
+			v[columns[i]] = value
+		}
+		res = append(res, v)
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return res, err
+	}
+	return res, nil
+}
+
+/*
 func Query(db *sql.DB, query string) ([]map[string]string, error) {
 	res := []map[string]string{}
 	rows, err := db.Query(query)
@@ -84,6 +124,7 @@ func Query(db *sql.DB, query string) ([]map[string]string, error) {
 	}
 	return res, nil
 }
+*/
 
 type DbObject interface {
 	GetDbInfo() (dbName string, tblName string)
@@ -420,13 +461,15 @@ func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
 	for _, c := range cols {
 		tp := getType(c.Type)
 		if tp == "int" {
+			// ret += "\t\tobj." + strings.ToUpper(c.Field[:1]) + c.Field[1:] + " = "
+			// ret += "r[\"" + c.Field + "\"].(int)\n"
 			ret += "\t\tobj." + strings.ToUpper(c.Field[:1]) + c.Field[1:] + ", err = "
-			ret += "strconv.Atoi(r[\"" + c.Field + "\"])\n"
+			ret += "strconv.Atoi(r[\"" + c.Field + "\"].(string))\n"
 			ret += "\t\tif err != nil && r[\"" + c.Field + "\"] != \"NULL\""
 			ret += " {\n\t\t\treturn ret, err\n\t\t}\n"
 		} else {
 			ret += "\t\tobj." + strings.ToUpper(c.Field[:1]) + c.Field[1:] + " = "
-			ret += "r[\"" + c.Field + "\"]\n"
+			ret += "r[\"" + c.Field + "\"].(string)\n"
 		}
 	}
 	ret += "\t\tret = append(ret, obj)\n"
