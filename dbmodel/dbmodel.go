@@ -135,6 +135,7 @@ type DbObject interface {
 func Escape(str string) string {
 	// ", ', 0=0
 	str = strings.Replace(str, "\"", "\\\"", -1)
+	str = strings.Replace(str, "''", "'", -1)
 	str = strings.Replace(str, "'", "''", -1)
 	// \x00, \n, \r, \ and \x1a"
 	str = strings.Replace(str, "\x00", "", -1)
@@ -198,7 +199,7 @@ func Save(obj DbObject) (int, error) {
 	values += ") "
 	query += fields + " values " + values
 	query += " on duplicate key update " + update
-	// fmt.Println(query)
+	//DEBUG: fmt.Println(query)
 	_, err = db.Exec(query)
 	// res, err := db.Exec(query)
 	// fmt.Println(res.LastInsertId())
@@ -443,6 +444,7 @@ func strGetDeleteFunction(c []Column, dbName string, tblName string) string {
 	return ret
 }
 func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
+	//TODO: with this code integer fields cannot be null. change to check for ""
 	var ret string = "func Query(where string, orderby string) ([]" + tblName + ", error) {\n"
 	ret += "\tquery := \"select * from " + dbName + "." + tblName + "\"\n"
 	ret += "\tif len(where) > 0 {\n\t\tquery += \" where \" + where\n\t}\n"
