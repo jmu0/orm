@@ -85,47 +85,6 @@ func Query(db *sql.DB, query string) ([]map[string]interface{}, error) {
 	return res, nil
 }
 
-/*
-func Query(db *sql.DB, query string) ([]map[string]string, error) {
-	res := []map[string]string{}
-	rows, err := db.Query(query)
-	if err != nil {
-		return res, err
-	}
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		return res, err
-	}
-	values := make([]sql.RawBytes, len(columns))
-	scanArgs := make([]interface{}, len(values))
-	for i := range values {
-		scanArgs[i] = &values[i]
-	}
-
-	for rows.Next() {
-		rows.Scan(scanArgs...)
-		v := map[string]string{}
-		var value string
-		for i, col := range values {
-			if col == nil {
-				value = "NULL"
-			} else {
-				value = string(col)
-			}
-			v[columns[i]] = value
-		}
-		res = append(res, v)
-	}
-	if err = rows.Err(); err != nil {
-		rows.Close()
-		return res, err
-	}
-	return res, nil
-}
-*/
-
 type DbObject interface {
 	GetDbInfo() (dbName string, tblName string)
 	GetColumns() []Column
@@ -162,7 +121,7 @@ func ToMap(obj DbObject) map[string]interface{} {
 	return m
 }
 
-//database object to map
+//database objects to slice of maps
 func ToMapSlice(slice []DbObject) []map[string]interface{} {
 	ret := make([]map[string]interface{}, 0)
 	for _, obj := range slice {
@@ -171,7 +130,7 @@ func ToMapSlice(slice []DbObject) []map[string]interface{} {
 	return ret
 }
 
-//Save database object
+//Save database object to database (insert or update)
 func Save(obj DbObject) (int, error) {
 	dbName, tblName := obj.GetDbInfo()
 	cols := obj.GetColumns()
@@ -199,16 +158,14 @@ func Save(obj DbObject) (int, error) {
 	values += ") "
 	query += fields + " values " + values
 	query += " on duplicate key update " + update
-	//DEBUG: fmt.Println(query)
 	_, err = db.Exec(query)
-	// res, err := db.Exec(query)
-	// fmt.Println(res.LastInsertId())
-	// fmt.Println("result:", res)
 	if err != nil {
 		return 1, err
 	}
 	return 0, nil
 }
+
+//delete database object from database
 func Delete(obj DbObject) (int, error) {
 	dbName, tblName := obj.GetDbInfo()
 	cols := obj.GetColumns()
@@ -238,10 +195,8 @@ func Delete(obj DbObject) (int, error) {
 //return string for query for value
 func valueString(val interface{}) string {
 	var value string
-	// fmt.Println("valueString:", val)
 	switch t := val.(type) {
 	case string:
-		// values += "\"" + reflect.ValueOf(c.Field) + "\""
 		value += "\"" + Escape(val.(string)) + "\""
 	case int, int32, int64:
 		value += strconv.Itoa(val.(int))
@@ -249,7 +204,6 @@ func valueString(val interface{}) string {
 		fmt.Println(t)
 		value += "\"" + Escape(val.(string)) + "\""
 	}
-	// fmt.Println("Escaped:", value)
 	return value
 }
 
@@ -389,6 +343,7 @@ func CreateObject(db *sql.DB, dbName, tblName string) error {
 	code += strGetQueryFunction(cols, dbName, tblName)
 	code += strGetSaveFunction(cols, dbName, tblName)
 	code += strGetDeleteFunction(cols, dbName, tblName)
+	code += strGetSetFunction(cols, tblName)
 	code += strGetColsFunction(cols, tblName)
 
 	//Write to file
@@ -425,6 +380,30 @@ func strGetColsFunction(c []Column, tblName string) string {
 		ret += strings.ToUpper(col.Field[:1]) + col.Field[1:] + ",\n"
 		ret += "\t\t},\n"
 	}
+	ret += "\t}\n"
+	ret += "}\n\n"
+	return ret
+}
+func strGetSetFunction(c []Column, tblName string) string {
+	var ret string
+	var letter string = strings.ToLower(tblName[:1])
+	ret = "func (" + letter + " *" + tblName + ") Set(key string, value interface{}) error {\n"
+	ret += "\tvar err error\n" //TODO: error not needed when no int fields
+	ret += "\tswitch key {\n"
+	for _, col := range c {
+		ret += "\tcase \"" + col.Field + "\":\n" //TODO: capitalize fields
+		if getType(col.Type) == "int" {
+			ret += "\t\t" + letter + "." + col.Field + ", err = strconv.Atoi(value.(string))\n"
+			ret += "\t\tif err != nil && value != \"NULL\" {\n"
+			ret += "\t\t\treturn err\n"
+			ret += "\t\t}\n"
+		} else {
+			ret += "\t\t" + letter + "." + col.Field + " = value.(string)\n"
+		}
+		ret += "\t\treturn nil\n"
+	}
+	ret += "\tdefault:\n"
+	ret += "\t\treturn errors.New(\"Key not found:\" + key)\n"
 	ret += "\t}\n"
 	ret += "}\n\n"
 	return ret
