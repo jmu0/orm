@@ -88,6 +88,9 @@ func Query(db *sql.DB, query string) ([]map[string]interface{}, error) {
 type DbObject interface {
 	GetDbInfo() (dbName string, tblName string)
 	GetColumns() []Column
+	Set(key string, value interface{}) error
+	Save() (Nr int, err error)
+	Delete() (Nr int, err error)
 }
 
 //escape string to prevent common sql injection attacks
@@ -310,7 +313,7 @@ func getType(t string) string {
 }
 
 //find out if the class has int columns, then it neets strconv import
-func needsStrconv(cols []Column) bool {
+func hasIntColumns(cols []Column) bool {
 	for _, c := range cols {
 		if getType(c.Type) == "int" {
 			return true
@@ -328,7 +331,7 @@ func CreateObject(db *sql.DB, dbName, tblName string) error {
 	code += "package " + strings.ToLower(tblName) + "\n\n"
 	code += "import (\n\t\"" + importPrefix + "dbmodel\"\n"
 	code += "\t\"errors\"\n"
-	if needsStrconv(cols) {
+	if hasIntColumns(cols) {
 		code += "\t\"strconv\"\n"
 	}
 	code += ")\n\n"
@@ -388,17 +391,24 @@ func strGetSetFunction(c []Column, tblName string) string {
 	var ret string
 	var letter string = strings.ToLower(tblName[:1])
 	ret = "func (" + letter + " *" + tblName + ") Set(key string, value interface{}) error {\n"
-	ret += "\tvar err error\n" //TODO: error not needed when no int fields
+	if hasIntColumns(c) {
+		ret += "\tvar err error\n"
+	}
+	ret += "\tif  value == nil {\n"
+	ret += "\t\treturn errors.New(\"value for \" + key + \" is nil\")\n"
+	ret += "\t}\n"
 	ret += "\tswitch key {\n"
 	for _, col := range c {
 		ret += "\tcase \"" + col.Field + "\":\n" //TODO: capitalize fields
 		if getType(col.Type) == "int" {
-			ret += "\t\t" + letter + "." + col.Field + ", err = strconv.Atoi(value.(string))\n"
+			ret += "\t\t" + letter + "."
+			ret += strings.ToUpper(col.Field[:1]) + col.Field[1:]
+			ret += ", err = strconv.Atoi(value.(string))\n"
 			ret += "\t\tif err != nil && value != \"NULL\" {\n"
 			ret += "\t\t\treturn err\n"
 			ret += "\t\t}\n"
 		} else {
-			ret += "\t\t" + letter + "." + col.Field + " = value.(string)\n"
+			ret += "\t\t" + letter + "." + strings.ToUpper(col.Field[:1]) + col.Field[1:] + " = value.(string)\n"
 		}
 		ret += "\t\treturn nil\n"
 	}
@@ -435,7 +445,7 @@ func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
 	ret += "\tres,err := dbmodel.Query(db, query)\n"
 	ret += "\tif err != nil {\n\t\treturn ret, err\n\t}\n"
 	ret += "\tfor _, r := range res {\n"
-	if needsStrconv(cols) {
+	if hasIntColumns(cols) {
 		ret += "\t\tvar err error\n"
 	}
 	ret += "\t\tobj := " + tblName + "{}\n"
