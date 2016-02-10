@@ -137,10 +137,8 @@ func ToMapSlice(slice []DbObject) []map[string]interface{} {
 	return ret
 }
 
-//TODO: save database object using statement
+//save database object using statement
 func Save(obj DbObject) (int, error) {
-	//zie: http://go-database-sql.org/prepared.html
-
 	var err error
 	dbName, tblName := obj.GetDbInfo()
 	cols := obj.GetColumns()
@@ -176,8 +174,7 @@ func Save(obj DbObject) (int, error) {
 	query += fields + " values " + strValues
 	query += " on duplicate key update " + strUpdate
 	insValues = append(insValues, updValues...)
-	//DEBUG
-	log.Println(query, insValues)
+	//DEBUG log.Println(query, insValues)
 	qr, err := db.Exec(query, insValues...)
 	if err != nil {
 		return 1, err
@@ -239,7 +236,6 @@ func Delete(obj DbObject) (int, error) {
 		fmt.Println("error:", err)
 	}
 	query += where
-	// fmt.Println(query)
 	res, err := db.Exec(query)
 	if err != nil {
 		return 1, err
