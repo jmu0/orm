@@ -95,17 +95,21 @@ type DbObject interface {
 
 //escape string to prevent common sql injection attacks
 func Escape(str string) string {
+
 	// ", ', 0=0
 	str = strings.Replace(str, "\"", "\\\"", -1)
 	str = strings.Replace(str, "''", "'", -1)
 	str = strings.Replace(str, "'", "''", -1)
+
 	// \x00, \n, \r, \ and \x1a"
 	str = strings.Replace(str, "\x00", "", -1)
 	str = strings.Replace(str, "\n", "", -1)
 	str = strings.Replace(str, "\r", "", -1)
-	str = strings.Replace(str, "\r", "", -1)
+	str = strings.Replace(str, "\x1a", "", -1)
+
 	//multiline attack
 	str = strings.Replace(str, ";", " ", -1)
+
 	//comments attack
 	str = strings.Replace(str, "--", "", -1)
 	str = strings.Replace(str, "#", "", -1)
@@ -131,6 +135,41 @@ func ToMapSlice(slice []DbObject) []map[string]interface{} {
 		ret = append(ret, ToMap(obj))
 	}
 	return ret
+}
+
+//TODO: save database object using statement
+func SaveStatement(obj DbObject) (int, error) {
+	//zie: http://go-database-sql.org/prepared.html
+	var err error
+	dbName, tblName := obj.GetDbInfo()
+	cols := obj.GetColumns()
+	db, err := Connect()
+	if err != nil {
+		return 1, err
+	}
+	defer db.Close()
+	query := "insert into " + dbName + "." + tblName + " "
+	fields := "("
+	valuesString := "("
+	insValues := []string{}
+	updValues := []string{}
+	update := ""
+	for i, c := range cols {
+		if len(fields) > 1 {
+			fields += ", "
+		}
+		fields += c.Field
+		if len(valuesString) > 1 {
+			valuesString += ", "
+		}
+		valuesString += "?"
+		insValues = append(values, c.Value)
+		if len(update) > 0 {
+			update += ", "
+		}
+
+	}
+	return 0, err
 }
 
 //Save database object to database (insert or update)
