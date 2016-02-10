@@ -138,8 +138,9 @@ func ToMapSlice(slice []DbObject) []map[string]interface{} {
 }
 
 //TODO: save database object using statement
-func SaveStatement(obj DbObject) (int, error) {
+func Save(obj DbObject) (int, error) {
 	//zie: http://go-database-sql.org/prepared.html
+
 	var err error
 	dbName, tblName := obj.GetDbInfo()
 	cols := obj.GetColumns()
@@ -150,30 +151,46 @@ func SaveStatement(obj DbObject) (int, error) {
 	defer db.Close()
 	query := "insert into " + dbName + "." + tblName + " "
 	fields := "("
-	valuesString := "("
-	insValues := []string{}
-	updValues := []string{}
-	update := ""
-	for i, c := range cols {
+	strValues := "("
+	insValues := make([]interface{}, 0)
+	updValues := make([]interface{}, 0)
+	strUpdate := ""
+	for _, c := range cols {
 		if len(fields) > 1 {
 			fields += ", "
 		}
 		fields += c.Field
-		if len(valuesString) > 1 {
-			valuesString += ", "
+		if len(strValues) > 1 {
+			strValues += ", "
 		}
-		valuesString += "?"
-		insValues = append(values, c.Value)
-		if len(update) > 0 {
-			update += ", "
+		strValues += "?"
+		insValues = append(insValues, c.Value)
+		if len(strUpdate) > 0 {
+			strUpdate += ", "
 		}
-
+		strUpdate += c.Field + "=?"
+		updValues = append(updValues, c.Value)
 	}
-	return 0, err
+	fields += ")"
+	strValues += ")"
+	query += fields + " values " + strValues
+	query += " on duplicate key update " + strUpdate
+	insValues = append(insValues, updValues...)
+	//DEBUG
+	log.Println(query, insValues)
+	qr, err := db.Exec(query, insValues...)
+	if err != nil {
+		return 1, err
+	}
+	id, err := qr.RowsAffected()
+	if err != nil {
+		return 1, err
+	}
+	return int(id), nil
 }
 
 //Save database object to database (insert or update)
-func Save(obj DbObject) (int, error) {
+func SaveQuery(obj DbObject) (int, error) {
 	dbName, tblName := obj.GetDbInfo()
 	cols := obj.GetColumns()
 	db, err := Connect()
