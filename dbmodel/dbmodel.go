@@ -82,6 +82,7 @@ func Query(db *sql.DB, query string) ([]map[string]interface{}, error) {
 		rows.Close()
 		return res, err
 	}
+	//DEBUG:log.Println(res)
 	return res, nil
 }
 
@@ -511,8 +512,10 @@ func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
 			ret += "\t\tif err != nil && r[\"" + c.Field + "\"] != \"NULL\""
 			ret += " {\n\t\t\treturn ret, err\n\t\t}\n"
 		} else {
-			ret += "\t\tobj." + strings.ToUpper(c.Field[:1]) + c.Field[1:] + " = "
+			ret += "\t\tif r[\"" + c.Field + "\"] != nil {\n"
+			ret += "\t\t\tobj." + strings.ToUpper(c.Field[:1]) + c.Field[1:] + " = "
 			ret += "r[\"" + c.Field + "\"].(string)\n"
+			ret += "\t\t}\n"
 		}
 	}
 	ret += "\t\tret = append(ret, obj)\n"
