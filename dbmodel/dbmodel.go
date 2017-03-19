@@ -2,20 +2,25 @@ package dbmodel
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
-	"github.com/jmu0/settings"
 	"log"
+	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
+	//used for connecting to datbase
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/jmu0/settings"
 )
 
-//connect to database
+//Connect connect to database
 func Connect(arg ...string) (*sql.DB, error) {
 	//TODO change path
-	var path string = "orm.conf"
+	var path string
+	path = "orm.conf"
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		path = "/etc/orm.conf"
 	}
@@ -45,7 +50,7 @@ func Connect(arg ...string) (*sql.DB, error) {
 	return db, nil
 }
 
-//Get slice of map[string]interface{} from database
+//Query Get slice of map[string]interface{} from database
 func Query(db *sql.DB, query string) ([]map[string]interface{}, error) {
 	res := make([]map[string]interface{}, 0)
 	rows, err := db.Query(query)
@@ -86,6 +91,198 @@ func Query(db *sql.DB, query string) ([]map[string]interface{}, error) {
 	return res, nil
 }
 
+//HandleREST handle REST api for DbObject
+func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) {
+	var objStr = r.URL.Path
+	db, err := Connect()
+	if err != nil {
+		http.Error(w, "Could not connect to database", http.StatusInternalServerError)
+		return
+	}
+	if pathPrefix[0] != '/' {
+		pathPrefix = "/" + pathPrefix
+	}
+	objStr = strings.Replace(objStr, pathPrefix, "", 1)
+	if objStr[0] == '/' {
+		objStr = objStr[1:]
+	}
+	if objStr[len(objStr)-1] == '/' {
+		objStr = objStr[:len(objStr)-1]
+	}
+	fmt.Println("DEBUG: objStr:", objStr)
+	objParts := strings.Split(objStr, "/")
+	for key, value := range objParts {
+		objParts[key] = Escape(value)
+	}
+	switch len(objParts) {
+	case 1: //only db, write list of tables
+		if r.Method == "GET" {
+			tbls := GetTableNames(db, objParts[0])
+			if len(tbls) > 0 {
+				bytes, err := json.Marshal(tbls)
+				if err != nil {
+					fmt.Println("HandleRest: error encoding json:", err)
+					http.Error(w, "Could not encode json", http.StatusInternalServerError)
+					return
+				}
+				w.Write(bytes)
+			} else {
+				http.Error(w, "Database doesn't exist", http.StatusNotFound)
+				return
+			}
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	case 2: //table, query rows
+		if r.Method == "GET" {
+			q := "select * from " + objParts[0] + "." + objParts[1]
+			//TODO check for query
+			if where, ok := r.URL.Query()["q"]; ok != false {
+				q += " where " + Escape(where[0])
+				q = strings.Replace(q, "''", "'", -1)
+			}
+			writeQueryResults(db, q, w)
+		} else if r.Method == "POST" { //post to a db table url
+			cols := getColsWithValues(db, objParts[0], objParts[1], r)
+			if len(cols) == 0 {
+				http.Error(w, "Object not found", http.StatusNotFound)
+				return
+			}
+			log.Println("POST:", r.URL.Path)
+			n, err := save(objParts[0], objParts[1], cols)
+			if err != nil {
+				log.Println("ERROR: POST:", objParts, err)
+				http.Error(w, "Could not save", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Write([]byte(strconv.Itoa(n)))
+
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	case 3: //table primary key, perform CRUD
+		// fmt.Println("DEBUG: HandleRest:", cols)
+		switch r.Method {
+		case "GET":
+			log.Println("GET:", objParts)
+			cols := getColsWithValues(db, objParts[0], objParts[1], r)
+			q := "select * from " + objParts[0] + "." + objParts[1] + " where "
+			where, err := strPrimaryKeyWhereSQL(cols)
+			if err != nil {
+				http.Error(w, "Could not build query", http.StatusInternalServerError)
+				return
+			}
+			q += where
+			writeQueryResults(db, q, w)
+		case "POST": //post to a object id
+			cols := getColsWithValues(db, objParts[0], objParts[1], r)
+			if len(cols) == 0 {
+				http.Error(w, "Object not found", http.StatusNotFound)
+				return
+			}
+			//put primary key values in columns
+			keys := strings.Split(objParts[2], ":")
+			keyCounter := 0
+			for index, column := range cols {
+				if column.Key == "PRI" {
+					cols[index].Value = keys[keyCounter]
+					keyCounter++
+					if keyCounter == len(keys) {
+						break
+					}
+				}
+			}
+			log.Println("POST:", r.URL.Path)
+			n, err := save(objParts[0], objParts[1], cols)
+			if err != nil {
+				log.Println("ERROR: POST:", objParts, err)
+				http.Error(w, "Could not save", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Write([]byte(strconv.Itoa(n)))
+			//TODO post
+		case "DELETE":
+			log.Println("DELETE:", objParts)
+
+			//TODO delete
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	default:
+		http.Error(w, "Invalid Path", http.StatusInternalServerError)
+		return
+	}
+}
+
+func getColsWithValues(db *sql.DB, dbName string, tblName string, r *http.Request) []Column {
+	cols := GetColumns(db, dbName, tblName)
+	data, err := getRequestData(r)
+	if err != nil {
+		log.Println("ERROR: POST:", dbName, tblName, err)
+	}
+	//set column values
+	for key, value := range data {
+		index := findColIndex(key, cols)
+		if index > -1 {
+			cols[index].Value = value
+		}
+	}
+	return cols
+}
+func findColIndex(field string, cols []Column) int {
+	for index, col := range cols {
+		if col.Field == field {
+			return index
+		}
+	}
+	return -1
+}
+func writeQueryResults(db *sql.DB, q string, w http.ResponseWriter) {
+	var ret interface{}
+	res, err := Query(db, q)
+	fmt.Println("DEBUG: writeQueryResults:", q)
+	if err != nil {
+		http.Error(w, "No results found", http.StatusNotFound)
+		return
+	}
+	if len(res) == 1 {
+		ret = res[0]
+	} else {
+		ret = res
+	}
+	bytes, err := json.Marshal(ret)
+	if err != nil {
+		fmt.Println("HandleRest: error encoding json:", err)
+		http.Error(w, "No results found", http.StatusNotFound)
+		return
+	}
+	//drop password fields
+	var pwReg = ",\"?([P,p]ass[W,w]o?r?d|[W,w]acht[W,w]o?o?r?d?)\"?:\"(.*?)\""
+	passwdReg := regexp.MustCompile(pwReg)
+	str := passwdReg.ReplaceAllString(string(bytes), "")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Write([]byte(str))
+}
+
+//getRequestData get data from post request
+func getRequestData(req *http.Request) (map[string]string, error) {
+	err := req.ParseForm()
+	if err != nil {
+		return make(map[string]string), err
+	}
+	res := make(map[string]string)
+	for k, v := range req.Form {
+		res[k] = strings.Join(v, "")
+	}
+	return res, nil
+}
+
+//DbObject interface
 type DbObject interface {
 	GetDbInfo() (dbName string, tblName string)
 	GetColumns() []Column
@@ -94,7 +291,7 @@ type DbObject interface {
 	Delete() (Nr int, err error)
 }
 
-//escape string to prevent common sql injection attacks
+//Escape string to prevent common sql injection attacks
 func Escape(str string) string {
 
 	// ", ', 0=0
@@ -119,7 +316,7 @@ func Escape(str string) string {
 	return str
 }
 
-//database object to map
+//ToMap database object to map
 func ToMap(obj DbObject) map[string]interface{} {
 	cols := obj.GetColumns()
 	m := make(map[string]interface{})
@@ -129,7 +326,7 @@ func ToMap(obj DbObject) map[string]interface{} {
 	return m
 }
 
-//database objects to slice of maps
+//ToMapSlice database objects to slice of maps
 func ToMapSlice(slice []DbObject) []map[string]interface{} {
 	ret := make([]map[string]interface{}, 0)
 	for _, obj := range slice {
@@ -138,16 +335,22 @@ func ToMapSlice(slice []DbObject) []map[string]interface{} {
 	return ret
 }
 
-//save database object using statement
+//Save database object using statement
 func Save(obj DbObject) (int, error) {
-	var err error
 	dbName, tblName := obj.GetDbInfo()
 	cols := obj.GetColumns()
+	return save(dbName, tblName, cols)
+}
+
+//save can be used by HandleREST and DbObject
+func save(dbName string, tblName string, cols []Column) (int, error) {
+	var err error
 	db, err := Connect()
 	if err != nil {
 		return 1, err
 	}
 	defer db.Close()
+
 	query := "insert into " + dbName + "." + tblName + " "
 	fields := "("
 	strValues := "("
@@ -180,14 +383,17 @@ func Save(obj DbObject) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	id, err := qr.RowsAffected()
+	id, err := qr.LastInsertId()
 	if err != nil {
-		return 1, err
+		id, err = qr.RowsAffected()
+		if err != nil {
+			return 1, err
+		}
 	}
 	return int(id), nil
 }
 
-//Save database object to database (insert or update)
+//SaveQuery (DEPRECATED) Save database object to database (insert or update) using insert query
 func SaveQuery(obj DbObject) (int, error) {
 	dbName, tblName := obj.GetDbInfo()
 	cols := obj.GetColumns()
@@ -222,7 +428,7 @@ func SaveQuery(obj DbObject) (int, error) {
 	return 0, nil
 }
 
-//delete database object from database
+//Delete database object from database
 func Delete(obj DbObject) (int, error) {
 	dbName, tblName := obj.GetDbInfo()
 	cols := obj.GetColumns()
@@ -232,7 +438,7 @@ func Delete(obj DbObject) (int, error) {
 	}
 	defer db.Close()
 	query := "delete from " + dbName + "." + tblName + " where"
-	where, err := strPrimaryKeyWhereSql(cols)
+	where, err := strPrimaryKeyWhereSQL(cols)
 	if err != nil {
 		fmt.Println("error:", err)
 	}
@@ -241,7 +447,7 @@ func Delete(obj DbObject) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	nrrows, err := res.RowsAffected()
+	nrrows, _ := res.RowsAffected()
 	if nrrows < 1 {
 		return 1, errors.New("No rows deleted")
 	}
@@ -265,11 +471,12 @@ func valueString(val interface{}) string {
 
 //returns connection string for database driver
 func makeDSN(server, user, password string) string {
-	var port string = "3306"
+	var port string
+	port = "3306"
 	return user + ":" + password + "@tcp(" + server + ":" + port + ")/"
 }
 
-//Get database names from server
+//GetDatabaseNames Get database names from server
 func GetDatabaseNames(db *sql.DB) []string {
 	dbs := []string{}
 	query := "show databases"
@@ -304,23 +511,25 @@ func skipDb(name string) bool {
 	return false
 }
 
-//Get table names from database
+//GetTableNames Get table names from database
 func GetTableNames(db *sql.DB, dbName string) []string {
 	tbls := []string{}
 	query := "show tables in " + dbName
 	rows, err := db.Query(query)
-	defer rows.Close()
-	if err == nil && rows != nil {
+	if err != nil {
+		return tbls
+	} else if rows != nil {
 		tableName := ""
 		for rows.Next() {
 			rows.Scan(&tableName)
 			tbls = append(tbls, tableName)
 		}
 	}
+	defer rows.Close()
 	return tbls
 }
 
-//get list of columns from database table
+//GetColumns get list of columns from database table
 func GetColumns(db *sql.DB, dbName string, tableName string) []Column {
 	cols := []Column{}
 	query := "show columns from " + dbName + "." + tableName
@@ -336,7 +545,7 @@ func GetColumns(db *sql.DB, dbName string, tableName string) []Column {
 	return cols
 }
 
-//Structure to represent table column
+//Column Structure to represent table column
 type Column struct {
 	Field   string
 	Type    string
@@ -350,7 +559,8 @@ type Column struct {
 //find out data type for database typ
 func getType(t string) string {
 	//TODO: more datatypes
-	var dataTypes map[string]string = map[string]string{
+	var dataTypes map[string]string
+	dataTypes = map[string]string{
 		"varchar":  "string",
 		"tinyint":  "int",
 		"smallint": "int",
@@ -360,9 +570,8 @@ func getType(t string) string {
 	t = strings.Split(t, "(")[0]
 	if tp, ok := dataTypes[t]; ok {
 		return tp
-	} else {
-		return "string"
 	}
+	return "string"
 }
 
 //find out if the class has int columns, then it neets strconv import
@@ -375,9 +584,9 @@ func hasIntColumns(cols []Column) bool {
 	return false
 }
 
-//create object from db/table
+//CreateObject create object from db/table
 func CreateObject(db *sql.DB, dbName, tblName string) error {
-	var code string = ""
+	var code string
 	var importPrefix = "github.com/jmu0/orm/"
 	cols := GetColumns(db, dbName, tblName)
 
@@ -487,7 +696,8 @@ func strGetDeleteFunction(c []Column, dbName string, tblName string) string {
 }
 func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
 	//TODO: with this code integer fields cannot be null. change to check for ""
-	var ret string = "func Query(where string, orderby string) ([]" + tblName + ", error) {\n"
+	var ret string
+	ret = "func Query(where string, orderby string) ([]" + tblName + ", error) {\n"
 	ret += "\tquery := \"select * from " + dbName + "." + tblName + "\"\n"
 	ret += "\tif len(where) > 0 {\n\t\tquery += \" where \" + where\n\t}\n"
 	ret += "\tif len(orderby) > 0 {\n\t\tquery += \" order by \" + orderby\n\t}\n"
@@ -525,7 +735,7 @@ func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
 	ret += "}\n\n"
 	return ret
 }
-func strPrimaryKeyWhereSql(cols []Column) (string, error) {
+func strPrimaryKeyWhereSQL(cols []Column) (string, error) {
 	var ret string
 	for _, c := range cols {
 		if c.Key == "PRI" {
