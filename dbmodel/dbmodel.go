@@ -92,12 +92,12 @@ func Query(db *sql.DB, query string) ([]map[string]interface{}, error) {
 }
 
 //HandleREST handle REST api for DbObject
-func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) {
+func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) string {
 	var objStr = r.URL.Path
 	db, err := Connect()
 	if err != nil {
 		http.Error(w, "Could not connect to database", http.StatusInternalServerError)
-		return
+		return ""
 	}
 	if pathPrefix[0] != '/' {
 		pathPrefix = "/" + pathPrefix
@@ -123,16 +123,16 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					fmt.Println("HandleRest: error encoding json:", err)
 					http.Error(w, "Could not encode json", http.StatusInternalServerError)
-					return
+					return ""
 				}
 				w.Write(bytes)
 			} else {
 				http.Error(w, "Database doesn't exist", http.StatusNotFound)
-				return
+				return ""
 			}
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
+			return ""
 		}
 	case 2: //table, query rows
 		if r.Method == "GET" {
@@ -147,22 +147,30 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) {
 			cols := getColsWithValues(db, objParts[0], objParts[1], r)
 			if len(cols) == 0 {
 				http.Error(w, "Object not found", http.StatusNotFound)
-				return
+				return ""
 			}
 			log.Println("POST:", r.URL.Path)
-			n, err := save(objParts[0], objParts[1], cols)
+			n, id, err := save(objParts[0], objParts[1], cols)
 			if err != nil {
 				log.Println("ERROR: POST:", objParts, err)
 				http.Error(w, "Could not save", http.StatusInternalServerError)
-				return
+				return ""
 			}
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.Write([]byte(strconv.Itoa(n)))
-
+			if n == 1 && id > -1 {
+				cols = setAutoIncColumn(id, cols)
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Write([]byte("{\"n\":\"" + strconv.Itoa(n) + "\",\"id\":\"" + strconv.Itoa(id) + "\"}"))
+			json, err := cols2json(objParts[1], cols)
+			if err != nil {
+				return ""
+			}
+			return string(json)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
+			return ""
 		}
+		return ""
 	case 3: //table primary key, perform CRUD
 		// fmt.Println("DEBUG: HandleRest:", cols)
 		switch r.Method {
@@ -173,7 +181,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) {
 			where, err := strPrimaryKeyWhereSQL(cols)
 			if err != nil {
 				http.Error(w, "Could not build query", http.StatusInternalServerError)
-				return
+				return ""
 			}
 			q += where
 			writeQueryResults(db, q, w)
@@ -181,7 +189,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) {
 			cols := getColsWithValues(db, objParts[0], objParts[1], r)
 			if len(cols) == 0 {
 				http.Error(w, "Object not found", http.StatusNotFound)
-				return
+				return ""
 			}
 			//put primary key values in columns
 			keys := strings.Split(objParts[2], ":")
@@ -196,27 +204,32 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			log.Println("POST:", r.URL.Path)
-			n, err := save(objParts[0], objParts[1], cols)
+			n, id, err := save(objParts[0], objParts[1], cols)
 			if err != nil {
 				log.Println("ERROR: POST:", objParts, err)
 				http.Error(w, "Could not save", http.StatusInternalServerError)
-				return
+				return ""
 			}
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.Write([]byte(strconv.Itoa(n)))
-			//TODO post
+			w.Write([]byte("{\"n\":\"" + strconv.Itoa(n) + "\",\"id\":\"" + strconv.Itoa(id) + "\"}"))
+			json, err := cols2json(objParts[1], cols)
+			if err != nil {
+				return ""
+			}
+			return string(json)
 		case "DELETE":
 			log.Println("DELETE:", objParts)
 
 			//TODO delete
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
+			return ""
 		}
 	default:
 		http.Error(w, "Invalid Path", http.StatusInternalServerError)
-		return
+		return ""
 	}
+	return ""
 }
 
 func getColsWithValues(db *sql.DB, dbName string, tblName string, r *http.Request) []Column {
@@ -234,6 +247,21 @@ func getColsWithValues(db *sql.DB, dbName string, tblName string, r *http.Reques
 	}
 	return cols
 }
+
+func cols2json(table string, cols []Column) ([]byte, error) {
+	var ret map[string]interface{}
+	ret = make(map[string]interface{})
+	ret["type"] = table
+	for _, col := range cols {
+		ret[col.Field] = col.Value
+	}
+	json, err := json.Marshal(ret)
+	if err != nil {
+		return []byte(""), err
+	}
+	return json, nil
+}
+
 func findColIndex(field string, cols []Column) int {
 	for index, col := range cols {
 		if col.Field == field {
@@ -339,15 +367,16 @@ func ToMapSlice(slice []DbObject) []map[string]interface{} {
 func Save(obj DbObject) (int, error) {
 	dbName, tblName := obj.GetDbInfo()
 	cols := obj.GetColumns()
-	return save(dbName, tblName, cols)
+	n, _, err := save(dbName, tblName, cols)
+	return n, err
 }
 
 //save can be used by HandleREST and DbObject
-func save(dbName string, tblName string, cols []Column) (int, error) {
+func save(dbName string, tblName string, cols []Column) (int, int, error) {
 	var err error
 	db, err := Connect()
 	if err != nil {
-		return 1, err
+		return -1, -1, err
 	}
 	defer db.Close()
 
@@ -381,16 +410,18 @@ func save(dbName string, tblName string, cols []Column) (int, error) {
 	//DEBUG log.Println(query, insValues)
 	qr, err := db.Exec(query, insValues...)
 	if err != nil {
-		return 1, err
+		return -1, -1, err
 	}
 	id, err := qr.LastInsertId()
 	if err != nil {
-		id, err = qr.RowsAffected()
-		if err != nil {
-			return 1, err
-		}
+		id = -1
 	}
-	return int(id), nil
+	n, err := qr.RowsAffected()
+	if err != nil {
+		n = -1
+	}
+	fmt.Println("DEBUG: save result n:", n, "id:", id)
+	return int(n), int(id), nil
 }
 
 //SaveQuery (DEPRECATED) Save database object to database (insert or update) using insert query
@@ -572,6 +603,18 @@ func getType(t string) string {
 		return tp
 	}
 	return "string"
+}
+
+func setAutoIncColumn(id int, cols []Column) []Column {
+	fmt.Println("DEBUG:setAutoIncColumn")
+	for index, col := range cols {
+
+		if strings.Contains(col.Type, "int") && col.Key == "PRI" {
+			fmt.Println("DEBUG:found", col.Field)
+			cols[index].Value = id
+		}
+	}
+	return cols
 }
 
 //find out if the class has int columns, then it neets strconv import
