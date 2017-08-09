@@ -96,7 +96,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 	var objStr = r.URL.Path
 	db, err := Connect()
 	if err != nil {
-		http.Error(w, "Could not connect to database", http.StatusInternalServerError)
+		http.Error(w, "REST: Could not connect to database", http.StatusInternalServerError)
 		return ""
 	}
 	if pathPrefix[0] != '/' {
@@ -109,7 +109,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 	if objStr[len(objStr)-1] == '/' {
 		objStr = objStr[:len(objStr)-1]
 	}
-	fmt.Println("DEBUG: objStr:", objStr)
+	fmt.Println("REST DEBUG: objStr:", objStr)
 	objParts := strings.Split(objStr, "/")
 	for key, value := range objParts {
 		objParts[key] = Escape(value)
@@ -146,13 +146,13 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 		} else if r.Method == "POST" { //post to a db table url
 			cols := getColsWithValues(db, objParts[0], objParts[1], r)
 			if len(cols) == 0 {
-				http.Error(w, "Object not found", http.StatusNotFound)
+				http.Error(w, "REST: Object not found", http.StatusNotFound)
 				return ""
 			}
 			log.Println("POST:", r.URL.Path)
 			n, id, err := save(objParts[0], objParts[1], cols)
 			if err != nil {
-				log.Println("ERROR: POST:", objParts, err)
+				log.Println("REST: ERROR: POST:", objParts, err)
 				http.Error(w, "Could not save", http.StatusInternalServerError)
 				return ""
 			}
@@ -175,7 +175,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 		// fmt.Println("DEBUG: HandleRest:", cols)
 		switch r.Method {
 		case "GET":
-			log.Println("GET:", objParts)
+			log.Println("REST: GET:", objParts)
 			cols := getColsWithValues(db, objParts[0], objParts[1], r)
 			q := "select * from " + objParts[0] + "." + objParts[1] + " where "
 			where, err := strPrimaryKeyWhereSQL(cols)
@@ -206,7 +206,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 			log.Println("POST:", r.URL.Path)
 			n, id, err := save(objParts[0], objParts[1], cols)
 			if err != nil {
-				log.Println("ERROR: POST:", objParts, err)
+				log.Println("REST: ERROR: POST:", objParts, err)
 				http.Error(w, "Could not save", http.StatusInternalServerError)
 				return ""
 			}
@@ -218,7 +218,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 			}
 			return string(json)
 		case "DELETE":
-			log.Println("DELETE:", objParts)
+			log.Println("REST: DELETE:", objParts)
 
 			//TODO delete
 		default:
@@ -236,7 +236,7 @@ func getColsWithValues(db *sql.DB, dbName string, tblName string, r *http.Reques
 	cols := GetColumns(db, dbName, tblName)
 	data, err := getRequestData(r)
 	if err != nil {
-		log.Println("ERROR: POST:", dbName, tblName, err)
+		log.Println("REST: ERROR: POST:", dbName, tblName, err)
 	}
 	//set column values
 	for key, value := range data {
@@ -273,7 +273,7 @@ func findColIndex(field string, cols []Column) int {
 func writeQueryResults(db *sql.DB, q string, w http.ResponseWriter) {
 	var ret interface{}
 	res, err := Query(db, q)
-	fmt.Println("DEBUG: writeQueryResults:", q)
+	fmt.Println("REST: DEBUG: writeQueryResults:", q)
 	if err != nil {
 		http.Error(w, "No results found", http.StatusNotFound)
 		return
@@ -420,7 +420,7 @@ func save(dbName string, tblName string, cols []Column) (int, int, error) {
 	if err != nil {
 		n = -1
 	}
-	fmt.Println("DEBUG: save result n:", n, "id:", id)
+	fmt.Println("REST: DEBUG: save result n:", n, "id:", id)
 	return int(n), int(id), nil
 }
 
@@ -564,12 +564,15 @@ func GetTableNames(db *sql.DB, dbName string) []string {
 func GetColumns(db *sql.DB, dbName string, tableName string) []Column {
 	cols := []Column{}
 	query := "show columns from " + dbName + "." + tableName
+	//TODO: waarom zie ik geen auto_increment in kolom Extra??
 	rows, err := db.Query(query)
 	defer rows.Close()
 	if err == nil && rows != nil {
 		col := Column{}
 		for rows.Next() {
 			rows.Scan(&col.Field, &col.Type, &col.Null, &col.Key, &col.Default, &col.Extra)
+
+			fmt.Println("DEBUG GetColumns:", col)
 			cols = append(cols, col)
 		}
 	}
