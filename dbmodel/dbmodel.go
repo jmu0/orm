@@ -109,7 +109,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 	if objStr[len(objStr)-1] == '/' {
 		objStr = objStr[:len(objStr)-1]
 	}
-	fmt.Println("REST DEBUG: objStr:", objStr)
+	//fmt.Println("REST DEBUG: objStr:", objStr)
 	objParts := strings.Split(objStr, "/")
 	for key, value := range objParts {
 		objParts[key] = Escape(value)
@@ -152,7 +152,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 			log.Println("POST:", r.URL.Path)
 			n, id, err := save(objParts[0], objParts[1], cols)
 			if err != nil {
-				log.Println("REST: ERROR: POST:", objParts, err)
+				log.Println("REST ERROR: POST:", objParts, err)
 				http.Error(w, "Could not save", http.StatusInternalServerError)
 				return ""
 			}
@@ -273,7 +273,7 @@ func findColIndex(field string, cols []Column) int {
 func writeQueryResults(db *sql.DB, q string, w http.ResponseWriter) {
 	var ret interface{}
 	res, err := Query(db, q)
-	fmt.Println("REST: DEBUG: writeQueryResults:", q)
+	//fmt.Println("REST: DEBUG: writeQueryResults:", q)
 	if err != nil {
 		http.Error(w, "No results found", http.StatusNotFound)
 		return
@@ -387,27 +387,30 @@ func save(dbName string, tblName string, cols []Column) (int, int, error) {
 	updValues := make([]interface{}, 0)
 	strUpdate := ""
 	for _, c := range cols {
-		if len(fields) > 1 {
-			fields += ", "
+		//log.Println("DEBUG:", c)
+		if (getType(c.Type) == "int" && c.Value == "") == false { //skip auto_increment column
+			if len(fields) > 1 {
+				fields += ", "
+			}
+			fields += c.Field
+			if len(strValues) > 1 {
+				strValues += ", "
+			}
+			strValues += "?"
+			insValues = append(insValues, c.Value)
+			if len(strUpdate) > 0 {
+				strUpdate += ", "
+			}
+			strUpdate += c.Field + "=?"
+			updValues = append(updValues, c.Value)
 		}
-		fields += c.Field
-		if len(strValues) > 1 {
-			strValues += ", "
-		}
-		strValues += "?"
-		insValues = append(insValues, c.Value)
-		if len(strUpdate) > 0 {
-			strUpdate += ", "
-		}
-		strUpdate += c.Field + "=?"
-		updValues = append(updValues, c.Value)
 	}
 	fields += ")"
 	strValues += ")"
 	query += fields + " values " + strValues
 	query += " on duplicate key update " + strUpdate
 	insValues = append(insValues, updValues...)
-	//DEBUG log.Println(query, insValues)
+	//DEBUG log.Println("DEBUG:",query, insValues)
 	qr, err := db.Exec(query, insValues...)
 	if err != nil {
 		return -1, -1, err
@@ -420,7 +423,7 @@ func save(dbName string, tblName string, cols []Column) (int, int, error) {
 	if err != nil {
 		n = -1
 	}
-	fmt.Println("REST: DEBUG: save result n:", n, "id:", id)
+	//fmt.Println("REST: DEBUG: save result n:", n, "id:", id)
 	return int(n), int(id), nil
 }
 
@@ -571,8 +574,8 @@ func GetColumns(db *sql.DB, dbName string, tableName string) []Column {
 		col := Column{}
 		for rows.Next() {
 			rows.Scan(&col.Field, &col.Type, &col.Null, &col.Key, &col.Default, &col.Extra)
-
-			fmt.Println("DEBUG GetColumns:", col)
+			// fmt.Println("DEBUG:",rows)
+			// fmt.Println("DEBUG GetColumns:", col)
 			cols = append(cols, col)
 		}
 	}
@@ -609,11 +612,10 @@ func getType(t string) string {
 }
 
 func setAutoIncColumn(id int, cols []Column) []Column {
-	fmt.Println("DEBUG:setAutoIncColumn")
+	//fmt.Println("DEBUG:setAutoIncColumn")
 	for index, col := range cols {
-
 		if strings.Contains(col.Type, "int") && col.Key == "PRI" {
-			fmt.Println("DEBUG:found", col.Field)
+			//fmt.Println("DEBUG:found", col.Field)
 			cols[index].Value = id
 		}
 	}
@@ -675,6 +677,7 @@ func CreateObject(db *sql.DB, dbName, tblName string) error {
 	}
 	return nil
 }
+
 func strGetColsFunction(c []Column, tblName string) string {
 	var ret string
 	ret = "func (" + strings.ToLower(tblName[:1]) + " *" + tblName + ") GetColumns() []dbmodel.Column {\n"
@@ -695,9 +698,10 @@ func strGetColsFunction(c []Column, tblName string) string {
 	ret += "}\n\n"
 	return ret
 }
+
 func strGetSetFunction(c []Column, tblName string) string {
 	var ret string
-	var letter string = strings.ToLower(tblName[:1])
+	var letter = strings.ToLower(tblName[:1])
 	ret = "func (" + letter + " *" + tblName + ") Set(key string, value interface{}) error {\n"
 	if hasIntColumns(c) {
 		ret += "\tvar err error\n"
@@ -726,6 +730,7 @@ func strGetSetFunction(c []Column, tblName string) string {
 	ret += "}\n\n"
 	return ret
 }
+
 func strGetSaveFunction(c []Column, dbName string, tblName string) string {
 	var ret string
 	ret = "func (" + strings.ToLower(tblName[:1]) + " *" + tblName + ") Save() (Nr int, err error) {\n"
@@ -733,6 +738,7 @@ func strGetSaveFunction(c []Column, dbName string, tblName string) string {
 	ret += "}\n\n"
 	return ret
 }
+
 func strGetDeleteFunction(c []Column, dbName string, tblName string) string {
 	var ret string
 	ret = "func (" + strings.ToLower(tblName[:1]) + " *" + tblName + ") Delete() (Nr int, err error) {\n"
@@ -740,6 +746,7 @@ func strGetDeleteFunction(c []Column, dbName string, tblName string) string {
 	ret += "}\n\n"
 	return ret
 }
+
 func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
 	//TODO: with this code integer fields cannot be null. change to check for ""
 	var ret string
@@ -781,6 +788,7 @@ func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
 	ret += "}\n\n"
 	return ret
 }
+
 func strPrimaryKeyWhereSQL(cols []Column) (string, error) {
 	var ret string
 	for _, c := range cols {
