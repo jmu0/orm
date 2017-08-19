@@ -44,6 +44,10 @@ func Connect(arg ...string) (*sql.DB, error) {
 		fmt.Scanln(&pwd)
 	}
 	db, err := sql.Open("mysql", makeDSN(database, usr, pwd))
+	//db.SetMaxOpenConns(50)
+	//db.SetMaxIdleConns(20)
+	// d, _ := time.ParseDuration("1 second")
+	// db.SetConnMaxLifetime(d)
 	if err != nil {
 		return db, err
 	}
@@ -61,6 +65,7 @@ func Query(db *sql.DB, query string) ([]map[string]interface{}, error) {
 
 	columns, err := rows.Columns()
 	if err != nil {
+		rows.Close()
 		return res, err
 	}
 	values := make([]sql.RawBytes, len(columns))
@@ -410,11 +415,16 @@ func save(dbName string, tblName string, cols []Column) (int, int, error) {
 	query += fields + " values " + strValues
 	query += " on duplicate key update " + strUpdate
 	insValues = append(insValues, updValues...)
-	//DEBUG log.Println("DEBUG:",query, insValues)
 	qr, err := db.Exec(query, insValues...)
+	// stmt, err := db.Prepare(query)
+	// if err != nil {
+	// 	return -1, -1, err
+	// }
+	// qr, err := stmt.Exec(insValues...)
 	if err != nil {
 		return -1, -1, err
 	}
+
 	id, err := qr.LastInsertId()
 	if err != nil {
 		id = -1
@@ -423,7 +433,7 @@ func save(dbName string, tblName string, cols []Column) (int, int, error) {
 	if err != nil {
 		n = -1
 	}
-	//fmt.Println("REST: DEBUG: save result n:", n, "id:", id)
+	// fmt.Println("REST: DEBUG: save result n:", n, "id:", id)
 	return int(n), int(id), nil
 }
 
