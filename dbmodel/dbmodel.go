@@ -182,6 +182,18 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 		case "GET":
 			log.Println("REST: GET:", objParts)
 			cols := getColsWithValues(db, objParts[0], objParts[1], r)
+			//put primary key values in columns
+			keys := strings.Split(objParts[2], ":")
+			keyCounter := 0
+			for index, column := range cols {
+				if column.Key == "PRI" {
+					cols[index].Value = keys[keyCounter]
+					keyCounter++
+					if keyCounter == len(keys) {
+						break
+					}
+				}
+			}
 			q := "select * from " + objParts[0] + "." + objParts[1] + " where "
 			where, err := strPrimaryKeyWhereSQL(cols)
 			if err != nil {
@@ -189,6 +201,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 				return ""
 			}
 			q += where
+			log.Println("REST: GET: query ", q)
 			writeQueryResults(db, q, w)
 		case "POST": //post to a object id
 			cols := getColsWithValues(db, objParts[0], objParts[1], r)
@@ -209,6 +222,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 				}
 			}
 			log.Println("POST:", r.URL.Path)
+			log.Println("DEBUG POST:", cols)
 			n, id, err := save(objParts[0], objParts[1], cols)
 			if err != nil {
 				log.Println("REST: ERROR: POST:", objParts, err)
@@ -393,27 +407,30 @@ func save(dbName string, tblName string, cols []Column) (int, int, error) {
 	strUpdate := ""
 	for _, c := range cols {
 		//log.Println("DEBUG:", c)
-		if (getType(c.Type) == "int" && c.Value == "") == false { //skip auto_increment column
-			if len(fields) > 1 {
-				fields += ", "
+		if c.Value != nil {
+			if (getType(c.Type) == "int" && c.Value == "") == false { //skip auto_increment column
+				if len(fields) > 1 {
+					fields += ", "
+				}
+				fields += c.Field
+				if len(strValues) > 1 {
+					strValues += ", "
+				}
+				strValues += "?"
+				insValues = append(insValues, c.Value)
+				if len(strUpdate) > 0 {
+					strUpdate += ", "
+				}
+				strUpdate += c.Field + "=?"
+				updValues = append(updValues, c.Value)
 			}
-			fields += c.Field
-			if len(strValues) > 1 {
-				strValues += ", "
-			}
-			strValues += "?"
-			insValues = append(insValues, c.Value)
-			if len(strUpdate) > 0 {
-				strUpdate += ", "
-			}
-			strUpdate += c.Field + "=?"
-			updValues = append(updValues, c.Value)
 		}
 	}
 	fields += ")"
 	strValues += ")"
 	query += fields + " values " + strValues
 	query += " on duplicate key update " + strUpdate
+	// log.Println("DEBUG SAVE query:", query)
 	insValues = append(insValues, updValues...)
 	qr, err := db.Exec(query, insValues...)
 	// stmt, err := db.Prepare(query)
@@ -501,6 +518,9 @@ func Delete(obj DbObject) (int, error) {
 //return string for query for value
 func valueString(val interface{}) string {
 	var value string
+	if val == nil {
+		return ""
+	}
 	switch t := val.(type) {
 	case string:
 		value += "\"" + Escape(val.(string)) + "\""
