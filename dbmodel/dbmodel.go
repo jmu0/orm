@@ -596,13 +596,14 @@ func GetTableNames(db *sql.DB, dbName string) []string {
 //GetColumns get list of columns from database table
 func GetColumns(db *sql.DB, dbName string, tableName string) []Column {
 	cols := []Column{}
+	var col Column
 	query := "show columns from " + dbName + "." + tableName
 	//TODO: waarom zie ik geen auto_increment in kolom Extra??
 	rows, err := db.Query(query)
 	defer rows.Close()
 	if err == nil && rows != nil {
-		col := Column{}
 		for rows.Next() {
+			col = Column{}
 			rows.Scan(&col.Field, &col.Type, &col.Null, &col.Key, &col.Default, &col.Extra)
 			// fmt.Println("DEBUG:",rows)
 			// fmt.Println("DEBUG GetColumns:", col)
