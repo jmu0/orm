@@ -130,6 +130,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 					http.Error(w, "Could not encode json", http.StatusInternalServerError)
 					return ""
 				}
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
 				w.Write(bytes)
 			} else {
 				http.Error(w, "Database doesn't exist", http.StatusNotFound)
