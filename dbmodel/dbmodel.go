@@ -148,6 +148,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 				q += " where " + Escape(where[0])
 				q = strings.Replace(q, "''", "'", -1)
 			}
+			log.Println("DEBUG: REST query:", q)
 			writeQueryResults(db, q, w)
 		} else if r.Method == "POST" { //post to a db table url
 			cols := getColsWithValues(db, objParts[0], objParts[1], r)
