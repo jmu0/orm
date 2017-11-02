@@ -338,6 +338,7 @@ func getRequestData(req *http.Request) (map[string]string, error) {
 type DbObject interface {
 	GetDbInfo() (dbName string, tblName string)
 	GetColumns() []Column
+	Get(key string) (Column, error)
 	Set(key string, value interface{}) error
 	Save() (Nr int, err error)
 	Delete() (Nr int, err error)
