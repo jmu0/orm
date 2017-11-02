@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	//used for connecting to datbase
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmu0/settings"
@@ -44,10 +45,10 @@ func Connect(arg ...string) (*sql.DB, error) {
 		fmt.Scanln(&pwd)
 	}
 	db, err := sql.Open("mysql", makeDSN(database, usr, pwd))
-	//db.SetMaxOpenConns(50)
-	//db.SetMaxIdleConns(20)
-	// d, _ := time.ParseDuration("1 second")
-	// db.SetConnMaxLifetime(d)
+	db.SetMaxOpenConns(50)
+	db.SetMaxIdleConns(0)
+	d, _ := time.ParseDuration("1 second")
+	db.SetConnMaxLifetime(d)
 	if err != nil {
 		return db, err
 	}
@@ -108,6 +109,10 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 		pathPrefix = "/" + pathPrefix
 	}
 	objStr = strings.Replace(objStr, pathPrefix, "", 1)
+	if len(objStr) == 0 {
+		http.NotFound(w, r)
+		return ""
+	}
 	if objStr[0] == '/' {
 		objStr = objStr[1:]
 	}
@@ -687,6 +692,7 @@ func CreateObject(db *sql.DB, dbName, tblName string) error {
 	code += strGetQueryFunction(cols, dbName, tblName)
 	code += strGetSaveFunction(cols, dbName, tblName)
 	code += strGetDeleteFunction(cols, dbName, tblName)
+	code += strGetGetFunction(cols, tblName)
 	code += strGetSetFunction(cols, tblName)
 	code += strGetColsFunction(cols, tblName)
 
@@ -762,6 +768,20 @@ func strGetSetFunction(c []Column, tblName string) string {
 	return ret
 }
 
+func strGetGetFunction(c []Column, tblName string) string {
+	var ret string
+	var letter = strings.ToLower(tblName[:1])
+	ret = "func (" + letter + " *" + tblName + ") Get(key string) (Column, error) {\n"
+	ret += "\tfor _, col := range " + letter + ".GetColumns() {\n"
+	ret += "\t\tif col[\"Field\"] == key {\n"
+	ret += "\t\t\treturn col\n"
+	ret += "\t\t}\n"
+	ret += "\t}\n"
+	ret += "\treturn Column{}, errors.New(\"Key not found:\" + key)\n"
+	ret += "}\n\n"
+	return ret
+}
+
 func strGetSaveFunction(c []Column, dbName string, tblName string) string {
 	var ret string
 	ret = "func (" + strings.ToLower(tblName[:1]) + " *" + tblName + ") Save() (Nr int, err error) {\n"
@@ -803,7 +823,7 @@ func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
 			// ret += "r[\"" + c.Field + "\"].(int)\n"
 			ret += "\t\tobj." + strings.ToUpper(c.Field[:1]) + c.Field[1:] + ", err = "
 			ret += "strconv.Atoi(r[\"" + c.Field + "\"].(string))\n"
-			ret += "\t\tif err != nil && r[\"" + c.Field + "\"] != \"NULL\""
+			ret += "\t\tif err != nil && r[\"" + c.Field + "\"] != \"NULL\" && r[\"" + c.Field + "\"] != \"\""
 			ret += " {\n\t\t\treturn ret, err\n\t\t}\n"
 		} else {
 			ret += "\t\tif r[\"" + c.Field + "\"] != nil {\n"
