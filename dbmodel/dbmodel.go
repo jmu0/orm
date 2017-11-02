@@ -202,7 +202,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 				}
 			}
 			q := "select * from " + objParts[0] + "." + objParts[1] + " where "
-			where, err := strPrimaryKeyWhereSQL(cols)
+			where, err := StrPrimaryKeyWhereSQL(cols)
 			if err != nil {
 				http.Error(w, "Could not build query", http.StatusInternalServerError)
 				return ""
@@ -416,7 +416,7 @@ func save(dbName string, tblName string, cols []Column) (int, int, error) {
 	for _, c := range cols {
 		//log.Println("DEBUG:", c)
 		if c.Value != nil {
-			if (getType(c.Type) == "int" && c.Value == "") == false { //skip auto_increment column
+			if (GetType(c.Type) == "int" && c.Value == "") == false { //skip auto_increment column
 				if len(fields) > 1 {
 					fields += ", "
 				}
@@ -507,7 +507,7 @@ func Delete(obj DbObject) (int, error) {
 	}
 	defer db.Close()
 	query := "delete from " + dbName + "." + tblName + " where"
-	where, err := strPrimaryKeyWhereSQL(cols)
+	where, err := StrPrimaryKeyWhereSQL(cols)
 	if err != nil {
 		fmt.Println("error:", err)
 	}
@@ -633,7 +633,7 @@ type Column struct {
 }
 
 //find out data type for database typ
-func getType(t string) string {
+func GetType(t string) string {
 	//TODO: more datatypes
 	var dataTypes map[string]string
 	dataTypes = map[string]string{
@@ -664,7 +664,7 @@ func setAutoIncColumn(id int, cols []Column) []Column {
 //find out if the class has int columns, then it neets strconv import
 func hasIntColumns(cols []Column) bool {
 	for _, c := range cols {
-		if getType(c.Type) == "int" {
+		if GetType(c.Type) == "int" {
 			return true
 		}
 	}
@@ -686,7 +686,7 @@ func CreateObject(db *sql.DB, dbName, tblName string) error {
 	code += ")\n\n"
 	code += "type " + tblName + " struct {\n"
 	for _, col := range cols {
-		code += "\t" + strings.ToUpper(col.Field[:1]) + col.Field[1:] + " " + getType(col.Type) + "\n"
+		code += "\t" + strings.ToUpper(col.Field[:1]) + col.Field[1:] + " " + GetType(col.Type) + "\n"
 	}
 	code += "}\n\n"
 	code += "func (" + strings.ToLower(tblName[:1]) + " *" + tblName + ") GetDbInfo() (dbName string, tblName string) {\n"
@@ -752,7 +752,7 @@ func strGetSetFunction(c []Column, tblName string) string {
 	ret += "\tswitch key {\n"
 	for _, col := range c {
 		ret += "\tcase \"" + col.Field + "\":\n" //TODO: capitalize fields
-		if getType(col.Type) == "int" {
+		if GetType(col.Type) == "int" {
 			ret += "\t\t" + letter + "."
 			ret += strings.ToUpper(col.Field[:1]) + col.Field[1:]
 			ret += ", err = strconv.Atoi(value.(string))\n"
@@ -774,13 +774,13 @@ func strGetSetFunction(c []Column, tblName string) string {
 func strGetGetFunction(c []Column, tblName string) string {
 	var ret string
 	var letter = strings.ToLower(tblName[:1])
-	ret = "func (" + letter + " *" + tblName + ") Get(key string) (Column, error) {\n"
+	ret = "func (" + letter + " *" + tblName + ") Get(key string) (dbmodel.Column, error) {\n"
 	ret += "\tfor _, col := range " + letter + ".GetColumns() {\n"
-	ret += "\t\tif col[\"Field\"] == key {\n"
-	ret += "\t\t\treturn col\n"
+	ret += "\t\tif col.Field == key {\n"
+	ret += "\t\t\treturn col, nil\n"
 	ret += "\t\t}\n"
 	ret += "\t}\n"
-	ret += "\treturn Column{}, errors.New(\"Key not found:\" + key)\n"
+	ret += "\treturn dbmodel.Column{}, errors.New(\"Key not found:\" + key)\n"
 	ret += "}\n\n"
 	return ret
 }
@@ -820,7 +820,7 @@ func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
 	}
 	ret += "\t\tobj := " + tblName + "{}\n"
 	for _, c := range cols {
-		tp := getType(c.Type)
+		tp := GetType(c.Type)
 		if tp == "int" {
 			// ret += "\t\tobj." + strings.ToUpper(c.Field[:1]) + c.Field[1:] + " = "
 			// ret += "r[\"" + c.Field + "\"].(int)\n"
@@ -843,7 +843,7 @@ func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
 	return ret
 }
 
-func strPrimaryKeyWhereSQL(cols []Column) (string, error) {
+func StrPrimaryKeyWhereSQL(cols []Column) (string, error) {
 	var ret string
 	for _, c := range cols {
 		if c.Key == "PRI" {
