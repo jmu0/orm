@@ -135,6 +135,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 					http.Error(w, "Could not encode json", http.StatusInternalServerError)
 					return ""
 				}
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
 				w.Write(bytes)
 			} else {
 				http.Error(w, "Database doesn't exist", http.StatusNotFound)
@@ -152,6 +153,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 				q += " where " + Escape(where[0])
 				q = strings.Replace(q, "''", "'", -1)
 			}
+			log.Println("DEBUG: REST query:", q)
 			writeQueryResults(db, q, w)
 		} else if r.Method == "POST" { //post to a db table url
 			cols := getColsWithValues(db, objParts[0], objParts[1], r)
