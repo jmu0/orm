@@ -153,7 +153,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 				q += " where " + Escape(where[0])
 				q = strings.Replace(q, "''", "'", -1)
 			}
-			log.Println("DEBUG: REST query:", q)
+			// log.Println("DEBUG: REST query:", q)
 			writeQueryResults(db, q, w)
 		} else if r.Method == "POST" { //post to a db table url
 			cols := getColsWithValues(db, objParts[0], objParts[1], r)
@@ -229,7 +229,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 				}
 			}
 			log.Println("POST:", r.URL.Path)
-			log.Println("DEBUG POST:", cols)
+			// log.Println("DEBUG POST:", cols)
 			n, id, err := save(objParts[0], objParts[1], cols)
 			if err != nil {
 				log.Println("REST: ERROR: POST:", objParts, err)
