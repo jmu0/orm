@@ -236,7 +236,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 				http.Error(w, "Could not save", http.StatusInternalServerError)
 				return ""
 			}
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.Write([]byte("{\"n\":\"" + strconv.Itoa(n) + "\",\"id\":\"" + strconv.Itoa(id) + "\"}"))
 			json, err := cols2json(objParts[1], cols)
 			if err != nil {
