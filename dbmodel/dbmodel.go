@@ -244,9 +244,33 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 			}
 			return string(json)
 		case "DELETE":
+			cols := getColsWithValues(db, objParts[0], objParts[1], r)
+			if len(cols) == 0 {
+				http.Error(w, "Object not found", http.StatusNotFound)
+				return ""
+			}
+			//put primary key values in columns
+			keys := strings.Split(objParts[2], ":")
+			keyCounter := 0
+			for index, column := range cols {
+				if column.Key == "PRI" {
+					cols[index].Value = keys[keyCounter]
+					keyCounter++
+					if keyCounter == len(keys) {
+						break
+					}
+				}
+			}
 			log.Println("REST: DELETE:", objParts)
-
-			//TODO delete
+			n, err := delete(objParts[0], objParts[1], cols)
+			if err != nil {
+				log.Println("REST: ERROR: POST:", objParts, err)
+				http.Error(w, "Could not save", http.StatusInternalServerError)
+				return ""
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Write([]byte("{\"n\":\"" + strconv.Itoa(n) + "\"}"))
+			return string(n)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return ""
@@ -501,6 +525,10 @@ func SaveQuery(obj DbObject) (int, error) {
 func Delete(obj DbObject) (int, error) {
 	dbName, tblName := obj.GetDbInfo()
 	cols := obj.GetColumns()
+	return delete(dbName, tblName, cols)
+}
+
+func delete(dbName string, tblName string, cols []Column) (int, error) {
 	db, err := Connect()
 	if err != nil {
 		return 1, err
