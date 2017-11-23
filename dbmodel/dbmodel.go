@@ -183,18 +183,19 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 			return ""
 		}
 		return ""
-	case 3: //table primary key, perform CRUD
+	default: //table primary key, perform CRUD
+		//ERROR does not work when key contains backslash: case 3: //table primary key, perform CRUD
 		// fmt.Println("DEBUG: HandleRest:", cols)
 		switch r.Method {
 		case "GET":
 			log.Println("REST: GET:", objParts)
 			cols := getColsWithValues(db, objParts[0], objParts[1], r)
 			//put primary key values in columns
-			keys := strings.Split(objParts[2], ":")
+			keys := strings.Split(strings.Join(objParts[2:], "/"), ":")
 			keyCounter := 0
 			for index, column := range cols {
 				if column.Key == "PRI" {
-					cols[index].Value = keys[keyCounter]
+					cols[index].Value = Escape(keys[keyCounter])
 					keyCounter++
 					if keyCounter == len(keys) {
 						break
@@ -208,7 +209,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 				return ""
 			}
 			q += where
-			log.Println("REST: GET: query ", q)
+			//log.Println("REST: GET: query ", q)
 			writeQueryResults(db, q, w)
 		case "POST": //post to a object id
 			cols := getColsWithValues(db, objParts[0], objParts[1], r)
@@ -217,11 +218,11 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 				return ""
 			}
 			//put primary key values in columns
-			keys := strings.Split(objParts[2], ":")
+			keys := strings.Split(strings.Join(objParts[2:], "/"), ":")
 			keyCounter := 0
 			for index, column := range cols {
 				if column.Key == "PRI" {
-					cols[index].Value = keys[keyCounter]
+					cols[index].Value = Escape(keys[keyCounter])
 					keyCounter++
 					if keyCounter == len(keys) {
 						break
@@ -229,6 +230,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 				}
 			}
 			log.Println("POST:", r.URL.Path)
+			//log.Println("DEBUG:POST:", objParts)
 			// log.Println("DEBUG POST:", cols)
 			n, id, err := save(objParts[0], objParts[1], cols)
 			if err != nil {
@@ -250,11 +252,11 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 				return ""
 			}
 			//put primary key values in columns
-			keys := strings.Split(objParts[2], ":")
+			keys := strings.Split(strings.Join(objParts[2:], "/"), ":")
 			keyCounter := 0
 			for index, column := range cols {
 				if column.Key == "PRI" {
-					cols[index].Value = keys[keyCounter]
+					cols[index].Value = Escape(keys[keyCounter])
 					keyCounter++
 					if keyCounter == len(keys) {
 						break
@@ -275,9 +277,9 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return ""
 		}
-	default:
-		http.Error(w, "Invalid Path", http.StatusInternalServerError)
-		return ""
+		// default:
+		// 	http.Error(w, "Invalid Path", http.StatusInternalServerError)
+		// 	return ""
 	}
 	return ""
 }
