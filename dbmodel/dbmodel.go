@@ -55,6 +55,22 @@ func Connect(arg ...string) (*sql.DB, error) {
 	return db, nil
 }
 
+//DoQuery connects, queries and returns results
+func DoQuery(query string) ([]map[string]interface{}, error) {
+	var err error
+	db, err := Connect()
+	ret := make([]map[string]interface{}, 0)
+	if err != nil {
+		return ret, err
+	}
+	defer db.Close()
+	ret, err = Query(db, query)
+	if err != nil {
+		return ret, err
+	}
+	return ret, nil
+}
+
 //Query Get slice of map[string]interface{} from database
 func Query(db *sql.DB, query string) ([]map[string]interface{}, error) {
 	res := make([]map[string]interface{}, 0)
@@ -95,6 +111,24 @@ func Query(db *sql.DB, query string) ([]map[string]interface{}, error) {
 	}
 	//DEBUG:log.Println(res)
 	return res, nil
+}
+
+//ServeQuery does query and writes json to responseWriter
+func ServeQuery(query string, w http.ResponseWriter) error {
+	result, err := DoQuery(query)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return err
+	}
+	json, err := json.Marshal(result)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return err
+	}
+	// log.Println("GET in bestelling voor", lokatie)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Write(json)
+	return nil
 }
 
 //HandleREST handle REST api for DbObject
