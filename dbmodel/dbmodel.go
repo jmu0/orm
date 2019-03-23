@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
 	//used for connecting to datbase
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmu0/settings"
@@ -172,7 +173,7 @@ func HandleREST(pathPrefix string, w http.ResponseWriter, r *http.Request) strin
 			rKey = rKey[1 : len(rKey)-1]
 		}
 	}
-	log.Println("DEBUG rDB:", rDB, "rTBL:", rTBL, "rKey:", rKey)
+	// log.Println("DEBUG rDB:", rDB, "rTBL:", rTBL, "rKey:", rKey)
 
 	switch len(oParts) {
 	case 1: //only db, write list of tables
