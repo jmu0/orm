@@ -728,7 +728,7 @@ type Column struct {
 	Value   interface{}
 }
 
-//find out data type for database typ
+//GetType find out data type for database typ
 func GetType(t string) string {
 	//TODO: more datatypes
 	var dataTypes map[string]string
@@ -939,6 +939,7 @@ func strGetQueryFunction(cols []Column, dbName string, tblName string) string {
 	return ret
 }
 
+//StrPrimaryKeyWhereSQL returns where part of query
 func StrPrimaryKeyWhereSQL(cols []Column) (string, error) {
 	var ret string
 	for _, c := range cols {
